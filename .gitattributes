@@ -1,0 +1,3 @@
+# Normaliza los fines de línea: el repositorio guarda LF y cada sistema
+# los convierte al formato nativo al hacer checkout.
+* text=auto

@@ -11,14 +11,9 @@ builder.Services.AddPersistence(connectionString);
 // Minimal API: los enums viajan como texto en JSON ("EnPreparacion" en lugar de 2).
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-builder.Services.AddProblemDetails();
-
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
-
-app.UseExceptionHandler();
-app.UseStatusCodePages();
 
 app.MapOpenApi();
 app.UseSwaggerUI(options =>

@@ -12,7 +12,7 @@ Arquitectura en **3 capas**:
 
 > **Estado del proyecto:** el repositorio es una base para completar.
 > - **Persistencia:** repositorios, entidades, scripts de base de datos y backup, todo completo.
-> - **Presentación:** esqueleto con `Program.cs`, Swagger, ProblemDetails y configuración. **Sin endpoints.**
+> - **Presentación:** esqueleto con `Program.cs`, Swagger y configuración. **Sin endpoints.**
 > - **Aplicación:** no existe. Hay que crearla con los servicios que implementan las reglas de negocio de este relevamiento.
 >
 > Los pasos están en [7.4 Trabajo a realizar](#74-trabajo-a-realizar) y la especificación de endpoints en [9. Endpoints](#9-endpoints).
@@ -78,24 +78,45 @@ McKing es un local de comidas rápidas de servicio en mostrador (no hay mozos). 
 
 ### 2.3 Sectores físicos
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                              SALÓN                                │
-│    mesas · pantalla de clientes (monitor grande en altura)         │
-│                                                                   │
-│  [TÓTEM 1] [TÓTEM 2] [TÓTEM 3]        ┌────────────────────────┐  │
-│                                       │   ZONA DE RETIRO        │  │
-│  ┌──────────────────────┐             │   (mostrador entrega)   │  │
-│  │  CAJA 1    CAJA 2     │             └──────────┬─────────────┘  │
-│  └──────────────────────┘                        │                │
-├──────────────────────────────────────────────────┼────────────────┤
-│                         COCINA                   │                │
-│  [PARRILLA]  [FREIDORA]  [BEBIDAS]  [POSTRES]  [ARMADO] ← monitor  │
-│                                                   de cocina (KDS)  │
-├───────────────────────────────────────────────────────────────────┤
-│  DRIVE-THRU:  cabina de pedido → ventanilla de pago → ventanilla   │
-│               de entrega                                           │
-└───────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph SALON["SALÓN"]
+        direction TB
+        Mesas["Mesas"]
+        Pantalla[["Pantalla de clientes<br/>(monitor grande en altura)"]]
+        subgraph TOTEMS["Tótems de autoservicio"]
+            direction LR
+            T1["Tótem 1"]
+            T2["Tótem 2"]
+            T3["Tótem 3"]
+        end
+        subgraph CAJA["Caja"]
+            direction LR
+            C1["Caja 1"]
+            C2["Caja 2"]
+        end
+        Retiro["Zona de retiro<br/>(mostrador de entrega)"]
+    end
+
+    subgraph COCINA["COCINA"]
+        direction LR
+        Parrilla["Parrilla"]
+        Freidora["Freidora"]
+        Bebidas["Bebidas"]
+        Postres["Postres"]
+        Armado["Armado"]
+        KDS[["Monitor de cocina (KDS)"]]
+    end
+
+    subgraph DRIVE["DRIVE-THRU"]
+        direction LR
+        Cabina["Cabina de pedido"] --> VPago["Ventanilla de pago"] --> VEntrega["Ventanilla de entrega"]
+    end
+
+    Parrilla & Freidora & Bebidas & Postres --> Armado
+    KDS -.- Armado
+    Armado --> Retiro
+    Armado --> VEntrega
 ```
 
 - **Salón:** mesas para consumir en el local y la **pantalla de clientes** visible desde todo el salón y desde la zona de retiro.
@@ -285,14 +306,17 @@ Como cada transición queda con fecha y hora, se pueden calcular:
 
 La pantalla es un monitor grande en el salón (y otro en el drive-thru) con **dos columnas**:
 
-```
-┌──────────────────────────────┬──────────────────────────────┐
-│       EN PREPARACIÓN         │     LISTOS PARA RETIRAR      │
-├──────────────────────────────┼──────────────────────────────┤
-│   102  Diego                 │   > 105  Ana                 │
-│   103                        │     101  Sofía               │
-│   104  Valentina             │                              │
-└──────────────────────────────┴──────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph PREP["EN PREPARACIÓN"]
+        direction TB
+        P102["102 · Diego"] ~~~ P103["103"] ~~~ P104["104 · Valentina"]
+    end
+    subgraph LISTOS["LISTOS PARA RETIRAR"]
+        direction TB
+        L105["▶ 105 · Ana"] ~~~ L101["101 · Sofía"]
+    end
+    PREP ~~~ LISTOS
 ```
 
 - **En preparación:** pedidos `Confirmado` y `EnPreparacion`, ordenados por número.
@@ -366,17 +390,20 @@ flowchart LR
 
 Dependencias entre proyectos (inversión de dependencias):
 
-```
-McKing.WebApi ──► McKing.Application ◄── McKing.Persistence
-      └──────────────────────────────────────────►┘  (solo para registrar la DI en Program.cs)
+```mermaid
+flowchart LR
+    WebApi["McKing.WebApi"] --> Application["McKing.Application"]
+    Persistence["McKing.Persistence"] --> Application
+    WebApi -. "solo para registrar la DI en Program.cs" .-> Persistence
 ```
 
 ### 7.2 Estado actual
 
 Hoy la Web API referencia directamente a Persistence, y las interfaces, entidades, enums y read models están en Persistence para que la solución compile sin la capa de aplicación:
 
-```
-McKing.WebApi ──► McKing.Persistence
+```mermaid
+flowchart LR
+    WebApi["McKing.WebApi"] --> Persistence["McKing.Persistence"]
 ```
 
 ### 7.3 Estructura del repositorio
@@ -432,7 +459,6 @@ McKing/
 - **Número de retiro atómico:** tabla `secuencias_retiro` con `INSERT … ON DUPLICATE KEY UPDATE ultimo_numero = LAST_INSERT_ID(ultimo_numero + 1)`. Es seguro con pedidos simultáneos.
 - **Concurrencia optimista:** `UPDATE pedidos SET estado = @nuevo WHERE id = @id AND estado = @actual`. Si no se actualiza ninguna fila, el pedido cambió en el medio: `CambiarEstado` y `Registrar` devuelven `false`, y la capa de aplicación debe informarlo como conflicto (409).
 - El "día operativo" y los tiempos se calculan con `CURDATE()` / `NOW()` del **servidor de base de datos**, así todos los puestos usan el mismo reloj.
-- La Web API ya tiene configurado **ProblemDetails** (RFC 9110) para las respuestas de error.
 
 ---
 
@@ -735,7 +761,7 @@ classDiagram
 
 ## 9. Endpoints
 
-> **Pendientes de implementación.** Esta sección es la especificación de los endpoints que hay que desarrollar con **Minimal API** (sin controllers) en `src/McKing.WebApi/Endpoints/`. `Program.cs` ya configura la serialización de enums como texto (`ConfigureHttpJsonOptions`), ProblemDetails y Swagger.
+> **Pendientes de implementación.** Esta sección es la especificación de los endpoints que hay que desarrollar con **Minimal API** (sin controllers) en `src/McKing.WebApi/Endpoints/`. `Program.cs` ya configura la serialización de enums como texto (`ConfigureHttpJsonOptions`) y Swagger.
 
 Cuando estén implementados, la documentación interactiva va a estar en **`/swagger`** (la raíz `/` redirige ahí) y el documento OpenAPI en `/openapi/v1.json`.
 
@@ -768,13 +794,40 @@ public static class PantallaEndpoints
 }
 ```
 
-En `Program.cs`: `app.MapPantallaEndpoints();`. Para validar los DTOs con DataAnnotations en Minimal API, .NET 10 trae `builder.Services.AddValidation();`.
+En `Program.cs`: `app.MapPantallaEndpoints();`.
+
+**Formato de los errores:** todas las respuestas de error (400, 404 y 409) tienen el mismo cuerpo, un objeto con el campo `error`:
+
+```json
+{ "error": "La cantidad de cada producto debe estar entre 1 y 20." }
+```
+
+```csharp
+return Results.BadRequest(new { error = "..." });   // 400: datos inválidos o regla de negocio incumplida
+return Results.NotFound(new { error = "..." });     // 404: el pedido o producto no existe
+return Results.Conflict(new { error = "..." });     // 409: transición de estado no permitida o concurrencia
+```
+
+La validación del formato de los DTOs se hace **a mano** en cada endpoint (sin DataAnnotations ni `AddValidation()`): se revisan los campos y, si algo está mal, se devuelve un 400 antes de llamar al servicio.
+
+```csharp
+grupo.MapPost("/", (CrearPedidoRequest request, IPedidoService servicio) =>
+{
+    if (request.Items is null || request.Items.Count == 0)
+        return Results.BadRequest(new { error = "El pedido debe tener al menos un producto." });
+
+    if (request.Items.Any(i => i.Cantidad < 1 || i.Cantidad > 20))
+        return Results.BadRequest(new { error = "La cantidad de cada producto debe estar entre 1 y 20." });
+
+    // ...llamar al servicio
+});
+```
 
 Qué le toca a cada capa:
 
 | Responsabilidad | Capa |
 |---|---|
-| Recibir la request, validar el formato (campos requeridos, rangos) y devolver ProblemDetails | Presentación |
+| Recibir la request, validar el formato (campos requeridos, rangos) y devolver el código de error correspondiente | Presentación |
 | Validar las reglas de negocio: productos existentes y disponibles, drive-thru para llevar, efectivo suficiente (RN-01 a RN-08) | Aplicación |
 | Congelar precios y calcular subtotales, total y vuelto (RN-03, RN-04, RN-08) | Aplicación |
 | Validar las transiciones de estado con la máquina de estados (RN-09 a RN-11) | Aplicación |
@@ -936,9 +989,5 @@ curl -s $API/api/pedidos/8
 Ejemplo de transición rechazada (cancelar un pedido que ya está en preparación):
 
 ```json
-{
-  "title": "Cambio de estado no permitido",
-  "status": 409,
-  "detail": "El pedido 102 está en estado EnPreparacion y no puede pasar a Cancelado. Estados permitidos: Listo."
-}
+{ "error": "El pedido 102 está en estado EnPreparacion y no puede pasar a Cancelado. Estados permitidos: Listo." }
 ```

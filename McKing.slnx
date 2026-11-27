@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/McKing.Persistence/McKing.Persistence.csproj" />
+    <Project Path="src/McKing.WebApi/McKing.WebApi.csproj" />
+  </Folder>
+</Solution>
